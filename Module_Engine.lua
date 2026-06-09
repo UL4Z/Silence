@@ -65,6 +65,7 @@ function Module_Engine.ValidateJob(job)
 end
 
 function Module_Engine.ExecuteJob(job)
+    -- Fake Lag Implementation (Spec: Adds task.wait() delay before firing)
     if DataBus.Config.FakeLagEnabled then
         task.wait(DataBus.Config.FakeLagMs / 1000)
     end
@@ -102,6 +103,24 @@ function Module_Engine.ExecuteJob(job)
             Module_Engine.ExecuteJob(pending)
         end
     end)
+end
+
+function Module_Engine.CreateTelegraph(job)
+    -- Visualise Parry (Telegraph) Logic
+    local entry = DataBus.ActiveBuild.Entries[job.animId]
+    if not entry or not entry.TelegraphEnabled then return end
+
+    local ball = Instance.new("Part")
+    ball.Shape = Enum.PartType.Ball
+    ball.Size = Vector3.new(entry.TelegraphSize or 15, entry.TelegraphSize or 15, entry.TelegraphSize or 15)
+    ball.Position = job.entity.HumanoidRootPart.Position
+    ball.Anchored = true
+    ball.CanCollide = false
+    ball.Transparency = 0.5
+    ball.Color = Color3.fromRGB(0, 255, 255) -- Cyan for parry
+    ball.Parent = workspace
+    
+    task.delay(0.2, function() ball:Destroy() end)
 end
 
 function Module_Engine.OnAnimationPlayed(entity, track)

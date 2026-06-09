@@ -92,4 +92,59 @@ function Module_Config.ExportBuild(name)
     return json
 end
 
+function Module_Config.ImportBuild(jsonOrPath)
+    local success, data = pcall(function()
+        if jsonOrPath:sub(1, 1) == "{" then
+            return HttpService:JSONDecode(jsonOrPath)
+        else
+            return HttpService:JSONDecode(readfile(jsonOrPath))
+        end
+    end)
+    
+    if success and data.Entries then
+        -- Imported timing treated as manual override
+        for id, entry in pairs(data.Entries) do
+            DataBus.ActiveBuild.Entries[id] = entry
+            
+            -- Initialize LearningRecord as ManualOverride
+            DataBus.LearningData[id] = {
+                AnimId = id,
+                AnimName = entry.AnimName,
+                Successes = 0,
+                Failures = 0,
+                ConsecutiveStreak = 0,
+                Confidence = 0.75,
+                Locked = false,
+                WindowMs = entry.DelayMs,
+                WindowSamples = {},
+                ManualOverride = true,
+                ManualWindowMs = entry.DelayMs,
+                TotalEncounters = 0
+            }
+        end
+        return true
+    end
+    return false, "Invalid build data"
+end
+
+function Module_Config.GetSavedConfigs()
+    if not listfiles then return {} end
+    local files = listfiles(CONFIG_PATH)
+    local names = {}
+    for _, file in ipairs(files) do
+        table.insert(names, file:match("([^/\\]+)%.json$"))
+    end
+    return names
+end
+
+function Module_Config.GetSavedBuilds()
+    if not listfiles then return {} end
+    local files = listfiles(BUILD_PATH)
+    local names = {}
+    for _, file in ipairs(files) do
+        table.insert(names, file:match("([^/\\]+)%.json$"))
+    end
+    return names
+end
+
 return Module_Config

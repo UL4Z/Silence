@@ -62,10 +62,50 @@ function Module_Viewer.SetupViewport(container)
     RunService.RenderStepped:Connect(function()
         if isSpinning then orbitY = orbitY + 0.5 end
         
-        local target = previewRig.PrimaryPart.Position
-        local cf = CFrame.new(target) * CFrame.Angles(0, math.rad(orbitY), 0) * CFrame.Angles(math.rad(orbitX), 0, 0) * CFrame.new(0, 0, zoomDist)
+        local char = Players.LocalPlayer.Character
+        local target = (previewRig and previewRig.PrimaryPart) and previewRig.PrimaryPart.Position or Vector3.new(0, 5, 0)
+        
+        local cf = CFrame.new(target) 
+            * CFrame.Angles(0, math.rad(orbitY), 0) 
+            * CFrame.Angles(math.rad(orbitX), 0, 0) 
+            * CFrame.new(0, 0, zoomDist)
+            
         camera.CFrame = cf
     end)
+end
+
+function Module_Viewer.ToggleSpin(v)
+    isSpinning = v
+end
+
+function Module_Viewer.ResetCamera()
+    orbitY = 0
+    orbitX = 0
+    zoomDist = 10
+end
+
+function Module_Viewer.ToggleGrid(v)
+    if not viewport:FindFirstChild("WorldModel") then return end
+    local wm = viewport.WorldModel
+    
+    local existing = wm:FindFirstChild("FloorGrid")
+    if existing then existing:Destroy() end
+    
+    if v then
+        local grid = Instance.new("Model")
+        grid.Name = "FloorGrid"
+        for x = -5, 5 do
+            for z = -5, 5 do
+                local p = Instance.new("Part")
+                p.Size = Vector3.new(2, 0.1, 2)
+                p.Position = Vector3.new(x * 2, 0, z * 2)
+                p.Anchored = true
+                p.Color = Color3.fromRGB(50, 50, 70)
+                p.Parent = grid
+            end
+        end
+        grid.Parent = wm
+    end
 end
 
 function Module_Viewer.CreateDefaultRig(worldModel)

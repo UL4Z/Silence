@@ -1,68 +1,106 @@
 --[[
     main.lua (v2)
     Silence v2 — UI & Startup Entry Point
-    Loaded via Loader.lua
+    Corrected for Obsidian (Linoria Fork)
 ]]
 
 local DataBus = getgenv().Silence.DataBus
 local LearningSystem = getgenv().Silence.Learning
 local FailDetection = getgenv().Silence.FailDetection
 
--- 1. Load Obsidian UI Library (Using the signature variant mstudio45 uses)
-local Obsidian = loadstring(game:HttpGet("https://raw.githubusercontent.com/mstudio45/Obsidian/main/Library.lua"))()
+-- 1. Load Obsidian UI Library
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"))()
 
 -- 2. Create Main Window
-local Window = Obsidian:CreateWindow({
+local Window = Library:CreateWindow({
     Title = "Silence",
-    SubTitle = "by 6",
-    Size = UDim2.fromOffset(600, 480),
-    Draggable = true,
-    Icon = "rbxassetid://10723343321", -- Bolt icon
+    Footer = "by 6",
+    Icon = "rbxassetid://10723343321",
+    NotifySide = "Right",
 })
 
--- 3. Create Tabs
+-- 3. Create Tabs (Obsidian uses icon names from Lucide)
 local Tabs = {
-    Parry = Window:CreateTab({ Name = "Parry", Icon = "rbxassetid://10723346610" }), -- Swords
-    Logger = Window:CreateTab({ Name = "Logger", Icon = "rbxassetid://10723346955" }), -- List
-    Recorder = Window:CreateTab({ Name = "Recorder", Icon = "rbxassetid://10723345840" }), -- Film
-    Builder = Window:CreateTab({ Name = "Builder", Icon = "rbxassetid://10723345532" }), -- Hammer
-    Builds = Window:CreateTab({ Name = "Builds", Icon = "rbxassetid://10723346371" }), -- Save
-    Config = Window:CreateTab({ Name = "Config", Icon = "rbxassetid://10723344435" }), -- Settings
+    Parry = Window:AddTab("Parry", "house"),
+    Logger = Window:AddTab("Logger", "list"),
+    Recorder = Window:AddTab("Recorder", "film"),
+    Builder = Window:AddTab("Builder", "hammer"),
+    Builds = Window:AddTab("Builds", "save"),
+    Config = Window:AddTab("Config", "settings"),
 }
 
--- 4. Hook up Logger UI
-local LoggerSub = Tabs.Logger:CreateSection("Animation Scanner")
-DataBus.UI.OnNewAnimation = function(animId)
-    local anim = DataBus.Animations[animId]
-    LoggerSub:CreateLabel({
-        Text = string.format("[%s] %s (%s)", anim.EntityType, anim.AnimName, anim.AnimId),
-        TextColor = Color3.fromRGB(200, 200, 255)
-    })
-    -- Add buttons (Copy ID, Preview, Add to Build, Ignore) as per spec
-end
-
--- 5. Hook up Engine UI (Parry Tab)
-local EngineSection = Tabs.Parry:CreateSection("Status")
-EngineSection:CreateToggle({
-    Name = "Auto Parry Master",
-    Value = DataBus.ParryState.Active,
-    Callback = function(v)
-        DataBus.ParryState.Active = v
-    end
+-- 4. Parry Tab (Engine Status)
+local MainGroup = Tabs.Parry:AddLeftGroupbox("Engine Status")
+MainGroup:AddToggle("MasterToggle", {
+    Text = "Auto Parry Master",
+    Default = DataBus.ParryState.Active,
+    Callback = function(v) DataBus.ParryState.Active = v end
 })
 
--- 6. Config Section
-local ConfigSection = Tabs.Config:CreateSection("Engine Settings")
-ConfigSection:CreateSlider({
-    Name = "Parry Range",
-    Min = 5, Max = 100,
-    Default = DataBus.Config.ParryRange,
+local BuildGroup = Tabs.Parry:AddLeftGroupbox("Active Build")
+BuildGroup:AddLabel("Current: " .. (DataBus.ActiveBuild.Name or "None"))
+
+-- 5. Logger Tab
+local LoggerGroup = Tabs.Logger:AddLeftGroupbox("Animation Logger")
+LoggerGroup:AddSlider("LoggerDistance", {
+    Text = "Logger Distance",
+    Min = 0, Max = 200, Default = DataBus.Config.LoggerDistance,
+    Rounding = 0,
+    Callback = function(v) DataBus.Config.LoggerDistance = v end
+})
+
+DataBus.UI.OnNewAnimation = function(animId)
+    local anim = DataBus.Animations[animId]
+    LoggerGroup:AddLabel(string.format("[%s] %s", anim.EntityType, anim.AnimName))
+end
+
+-- 5a. Recorder Tab
+local RecorderGroup = Tabs.Recorder:AddLeftGroupbox("Delay Recorder")
+RecorderGroup:AddToggle("RecorderActive", {
+    Text = "Record Enemy Animations",
+    Default = DataBus.DelayRecorder.Active,
+    Callback = function(v) DataBus.DelayRecorder.Active = v end
+})
+
+DataBus.UI.UpdateRecorder = function(animId)
+    local rec = DataBus.DelayRecorder.Recorded[animId]
+    RecorderGroup:AddLabel(string.format("%s: Raw %.2fs | Guess %.2fs", rec.AnimName, rec.RawDeltaMs/1000, rec.GuessDeltaMs/1000))
+end
+
+-- 6. Config Tab
+local ConfigGroup = Tabs.Config:AddLeftGroupbox("Global Settings")
+ConfigGroup:AddSlider("ParryRange", {
+    Text = "Parry Range",
+    Min = 5, Max = 100, Default = DataBus.Config.ParryRange,
+    Rounding = 0,
     Callback = function(v) DataBus.Config.ParryRange = v end
 })
 
--- 7. Start Background Service
+ConfigGroup:AddSlider("ParryCooldown", {
+    Text = "Parry Cooldown",
+    Min = 0.3, Max = 2.0, Default = DataBus.Config.ParryCooldownSec,
+    Rounding = 2,
+    Callback = function(v) DataBus.Config.ParryCooldownSec = v end
+})
+
+local LearningGroup = Tabs.Config:AddLeftGroupbox("Learning Parameters")
+LearningGroup:AddSlider("Alpha", {
+    Text = "Alpha (Prior Successes)",
+    Min = 1, Max = 10, Default = DataBus.Config.Learning.Alpha,
+    Rounding = 0,
+    Callback = function(v) DataBus.Config.Learning.Alpha = v end
+})
+
+LearningGroup:AddSlider("MomentumClamp", {
+    Text = "Momentum Clamp Max",
+    Min = 0.01, Max = 0.10, Default = DataBus.Config.Learning.MomentumClampMax,
+    Rounding = 3,
+    Callback = function(v) DataBus.Config.Learning.MomentumClampMax = v end
+})
+
+-- 7. Start Background Services
 DataBus.ParryState.Active = true
 getgenv().Silence.Modules.Logger.Start()
 getgenv().Silence.Modules.Engine.Start()
 
-print("[Silence] UI and Modules initialized successfully.")
+print("[Silence] UI and Modules initialized successfully with Obsidian.")
