@@ -1,59 +1,68 @@
 --[[
-    Silence (v2) — Universal Auto Parry & Animation Logger
-    Credit: 6
-    Target Executors: Potassium, Volt
+    main.lua (v2)
+    Silence v2 — UI & Startup Entry Point
+    Loaded via Loader.lua
 ]]
 
-local Capabilities = {
-    WriteFile = type(writefile) == "function",
-    ReadFile = type(readfile) == "function",
-    Clipboard = type(setclipboard) == "function",
-    VIM = game:GetService("VirtualInputManager") ~= nil,
-    GetNetworkPing = type(game.GetNetworkPing) == "function"
+local DataBus = getgenv().Silence.DataBus
+local LearningSystem = getgenv().Silence.Learning
+local FailDetection = getgenv().Silence.FailDetection
+
+-- 1. Load Obsidian UI Library (Using the signature variant mstudio45 uses)
+local Obsidian = loadstring(game:HttpGet("https://raw.githubusercontent.com/mstudio45/Obsidian/main/Library.lua"))()
+
+-- 2. Create Main Window
+local Window = Obsidian:CreateWindow({
+    Title = "Silence",
+    SubTitle = "by 6",
+    Size = UDim2.fromOffset(600, 480),
+    Draggable = true,
+    Icon = "rbxassetid://10723343321", -- Bolt icon
+})
+
+-- 3. Create Tabs
+local Tabs = {
+    Parry = Window:CreateTab({ Name = "Parry", Icon = "rbxassetid://10723346610" }), -- Swords
+    Logger = Window:CreateTab({ Name = "Logger", Icon = "rbxassetid://10723346955" }), -- List
+    Recorder = Window:CreateTab({ Name = "Recorder", Icon = "rbxassetid://10723345840" }), -- Film
+    Builder = Window:CreateTab({ Name = "Builder", Icon = "rbxassetid://10723345532" }), -- Hammer
+    Builds = Window:CreateTab({ Name = "Builds", Icon = "rbxassetid://10723346371" }), -- Save
+    Config = Window:CreateTab({ Name = "Config", Icon = "rbxassetid://10723344435" }), -- Settings
 }
 
--- Hard requirements — abort if missing
-if not Capabilities.VIM then
-    error("[Silence] VirtualInputManager unavailable. This executor is not supported.")
+-- 4. Hook up Logger UI
+local LoggerSub = Tabs.Logger:CreateSection("Animation Scanner")
+DataBus.UI.OnNewAnimation = function(animId)
+    local anim = DataBus.Animations[animId]
+    LoggerSub:CreateLabel({
+        Text = string.format("[%s] %s (%s)", anim.EntityType, anim.AnimName, anim.AnimId),
+        TextColor = Color3.fromRGB(200, 200, 255)
+    })
+    -- Add buttons (Copy ID, Preview, Add to Build, Ignore) as per spec
 end
 
-local DataBus = require(script.DataBus) -- In practice: loadstring(game:HttpGet(...))
-local LearningSystem = require(script.LearningSystem)
-local FailDetection = require(script.FailDetection)
-local Logger = require(script.Module_Logger)
-local Recorder = require(script.Module_Recorder)
-local Viewer = require(script.Module_Viewer)
-local Builder = require(script.Module_Builder)
-local Engine = require(script.Module_Engine)
-local Config = require(script.Module_Config)
+-- 5. Hook up Engine UI (Parry Tab)
+local EngineSection = Tabs.Parry:CreateSection("Status")
+EngineSection:CreateToggle({
+    Name = "Auto Parry Master",
+    Value = DataBus.ParryState.Active,
+    Callback = function(v)
+        DataBus.ParryState.Active = v
+    end
+})
 
--- 1. Capability Notification
-if not Capabilities.WriteFile then
-    warn("[Silence] writefile unavailable. Operating in memory-only mode.")
-end
+-- 6. Config Section
+local ConfigSection = Tabs.Config:CreateSection("Engine Settings")
+ConfigSection:CreateSlider({
+    Name = "Parry Range",
+    Min = 5, Max = 100,
+    Default = DataBus.Config.ParryRange,
+    Callback = function(v) DataBus.Config.ParryRange = v end
+})
 
--- 2. Module Initialization
-Config.Init(DataBus)
-FailDetection.Init(DataBus)
-Logger.Init(DataBus)
-Recorder.Init(DataBus)
-Viewer.Init(DataBus)
-Builder.Init(DataBus)
-Engine.Init(DataBus, LearningSystem, FailDetection)
+-- 7. Start Background Service
+DataBus.ParryState.Active = true
+getgenv().Silence.Modules.Logger.Start()
+getgenv().Silence.Modules.Engine.Start()
 
--- 3. Load Config/Build
-Config.LoadConfig("Default")
-if DataBus.Config.AutoLoadBuild then
-    Config.LoadBuild(DataBus.Config.AutoLoadBuild)
-end
-
--- 4. UI Setup (Obsidian)
--- Load Obsidian UI Library...
--- Build tabs (Parry, Logger, Recorder, Builder, Builds, Config)
--- ...
-
--- 5. Start Loops
-Logger.Start()
--- Engine and Recorder start based on UI toggles/ActiveBuild presence
-
-print("[Silence] Script loaded successfully.")
+print("[Silence] UI and Modules initialized successfully.")
