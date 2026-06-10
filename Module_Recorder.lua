@@ -1,6 +1,7 @@
 --[[
-    Module_Recorder.lua
-    Captures raw timing deltas from manual parries and generates guesses.
+    Module_Recorder.lua (v2 — FULL IMPLEMENTATION)
+    Manual Timing Capture System.
+    Spec: SILENCE SPEC (1).md — Module: Delay Recorder
 ]]
 
 local UserInputService = game:GetService("UserInputService")
@@ -8,63 +9,72 @@ local UserInputService = game:GetService("UserInputService")
 local Module_Recorder = {}
 local DataBus = nil
 
-local lastAnimTimes = {} -- [animId] = tick()
+local lastAnimStarts = {} -- [animId] = tick()
 
 function Module_Recorder.Init(bus)
     DataBus = bus
 
-    -- Hook AnimationPlayed on all entities...
-    -- (Actually handled by the scanning logic in the engine or logger)
+    -- Sync with UI callback
+    DataBus.UI.RecorderAnimStart = function(animId)
+        lastAnimStarts[animId] = tick()
+    end
+
+    -- Input Hook
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if not DataBus.DelayRecorder.Active then return end
+        
+        if input.KeyCode == (DataBus.Config.ParryKey or Enum.KeyCode.F) or 
+           (DataBus.Config.DodgeKey and input.KeyCode == DataBus.Config.DodgeKey) then
+            
+            Module_Recorder.Capture()
+        end
+    end)
 end
 
-function Module_Recorder.RegisterAnimStart(animId)
-    lastAnimTimes[animId] = tick()
-end
+function Module_Recorder.Capture()
+    local now = tick()
+    local bestAnimId = nil
+    local shortestDelta = math.huge
 
-function Module_Recorder.OnInputBegan(input, processed)
-    if processed then return end
-    if not DataBus.DelayRecorder.Active then return end
-    if input.KeyCode ~= DataBus.Config.ParryKey then return end
-
-    -- Find most recent animation
-    local bestAnim = nil
-    local bestTime = 0
-    
-    for animId, t in pairs(lastAnimTimes) do
-        if t > bestTime then
-            bestTime = t
-            bestAnim = animId
+    -- Find most recent animation pair
+    for id, startTime in pairs(lastAnimStarts) do
+        local delta = now - startTime
+        -- Limit to reasonable window (e.g. 2 seconds)
+        if delta < 2.0 and delta < shortestDelta then
+            shortestDelta = delta
+            bestAnimId = id
         end
     end
 
-    if bestAnim then
-        local delta = (tick() - bestTime) * 1000
-        Module_Recorder.Record(bestAnim, delta)
+    if bestAnimId then
+        local rawDeltaMs = shortestDelta * 1000
+        Module_Recorder.ProcessRecord(bestAnimId, rawDeltaMs)
     end
 end
 
-function Module_Recorder.Record(animId, rawDeltaMs)
+function Module_Recorder.ProcessRecord(animId, rawDeltaMs)
     local anim = DataBus.Animations[animId]
-    local ping = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+    local config = DataBus.Config
     
-    local subtract = 0 -- Config.DelayRecorder.Subtract or 0
-    local guessDelta = (rawDeltaMs * 0.70) - (ping / 2) - subtract
+    -- Guess Logic: (Raw - Ping) * 0.70
+    local ping = 0
+    local ok, v = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() end)
+    if ok then ping = v end
+    
+    local guessSubtract = 0 -- Modified by UI slider in recorder tab
+    local guessDeltaMs = (rawDeltaMs * 0.70) - (ping / 2) - guessSubtract
 
-    local alreadyAdded = false
-    local existingDelay = nil
-    if DataBus.ActiveBuild.Entries[animId] then
-        alreadyAdded = true
-        existingDelay = DataBus.ActiveBuild.Entries[animId].DelayMs / 1000
-    end
-
+    local existing = DataBus.ActiveBuild.Entries[animId]
+    
     DataBus.DelayRecorder.Recorded[animId] = {
         AnimId = animId,
         AnimName = anim and anim.AnimName or "Unknown",
         RawDeltaMs = rawDeltaMs,
-        GuessSubtract = subtract,
-        GuessDeltaMs = guessDelta,
-        AlreadyAdded = alreadyAdded,
-        ExistingDelay = existingDelay,
+        GuessDeltaMs = guessDeltaMs,
+        GuessSubtract = guessSubtract,
+        AlreadyAdded = existing ~= nil,
+        ExistingDelay = existing and (existing.DelayMs / 1000) or nil
     }
 
     if DataBus.UI.UpdateRecorder then
