@@ -112,34 +112,26 @@ local function getOrMakeCacheFolder()
 end
 
 function Module_Viewer.CacheEntity(animId, sourceModel)
-    -- Spec: clone model into PlayerGui SilenceEntityCache, strip scripts, freeze HRP
-    if not sourceModel or not sourceModel.Parent then return nil end
+    if not sourceModel then return nil end
     local cacheFolder = getOrMakeCacheFolder()
 
     -- Remove existing cache for this anim
     local existing = cacheFolder:FindFirstChild("e_" .. animId)
     if existing then existing:Destroy() end
 
+    -- Enable archiving so we can clone
+    sourceModel.Archivable = true
     local clone = sourceModel:Clone()
     clone.Name = "e_" .. animId
 
-    -- Strip all scripts
+    -- Strip scripts
     for _, s in ipairs(clone:GetDescendants()) do
-        if s:IsA("Script") or s:IsA("LocalScript") or s:IsA("ModuleScript") then
-            s:Destroy()
-        end
+        if s:IsA("Script") or s:IsA("LocalScript") or s:IsA("ModuleScript") then s:Destroy() end
     end
 
-    -- Freeze HumanoidRootPart, remove health decay
-    local hrp = clone:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.Anchored = true
-        hrp.Velocity = Vector3.zero
-    end
-    local hum = clone:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
-        -- Remove Animate script if present to stop it interfering
+    -- Anchor rig
+    for _, p in ipairs(clone:GetDescendants()) do
+        if p:IsA("BasePart") then p.Anchored = true end
     end
 
     clone.Parent = cacheFolder
@@ -147,67 +139,29 @@ function Module_Viewer.CacheEntity(animId, sourceModel)
 end
 
 local function getRigForAnim(animId)
-    -- Spec Priority:
-    -- 1. If logged from a Player: that player's current character if in workspace
-    -- 2. If logged from cached NPC still in workspace: cached model
-    -- 3. Default R6 noob rig
+    -- 1. Check local cache first (The real NPC/Player rig)
+    local cacheFolder = getOrMakeCacheFolder()
+    local cached = cacheFolder:FindFirstChild("e_" .. animId)
+    if cached then return cached:Clone() end
 
+    -- 2. Check if it belongs to a player currently in game
     local animRecord = DataBus.Animations[animId]
-    if animRecord then
-        if animRecord.EntityType == "Player" and animRecord.UserId then
-            local player = Players:GetPlayerByUserId(animRecord.UserId)
-            if player and player.Character and player.Character.Parent then
-                local clone = player.Character:Clone()
-                for _, s in ipairs(clone:GetDescendants()) do
-                    if s:IsA("Script") or s:IsA("LocalScript") or s:IsA("ModuleScript") then s:Destroy() end
-                end
-                local hrp = clone:FindFirstChild("HumanoidRootPart")
-                if hrp then hrp.Anchored = true end
-                return clone
-            end
-        end
-
-        -- Check entity cache
-        local cacheFolder = getOrMakeCacheFolder()
-        local cached = cacheFolder:FindFirstChild("e_" .. animId)
-        if cached then
-            return cached:Clone()
+    if animRecord and animRecord.UserId then
+        local player = Players:GetPlayerByUserId(animRecord.UserId)
+        if player and player.Character then
+            player.Character.Archivable = true
+            return player.Character:Clone()
         end
     end
 
-    -- Fallback: basic R6 rig assembled from parts
-    local rig = Instance.new("Model")
-    rig.Name = "DefaultR6Rig"
-
-    local hrp = make("Part", {
-        Name = "HumanoidRootPart",
-        Size = Vector3.new(2, 2, 1),
-        Anchored = true, CanCollide = false,
-        Transparency = 1,
-        CFrame = CFrame.new(0, 3, 0),
-    }, rig)
-    rig.PrimaryPart = hrp
-
-    local function addPart(n, sz, cf)
-        return make("Part", {
-            Name = n, Size = sz,
-            Anchored = true, CanCollide = false,
-            BrickColor = BrickColor.new("Bright yellow"),
-            CFrame = hrp.CFrame * cf,
-        }, rig)
+    -- 3. Fallback to LocalPlayer's rig
+    local localChar = Players.LocalPlayer.Character
+    if localChar then
+        localChar.Archivable = true
+        return localChar:Clone()
     end
 
-    addPart("Torso",        Vector3.new(2, 2, 1),      CFrame.new(0, 0, 0))
-    addPart("Head",         Vector3.new(1, 1, 1),      CFrame.new(0, 1.5, 0))
-    addPart("Left Arm",     Vector3.new(1, 2, 1),      CFrame.new(-1.5, 0, 0))
-    addPart("Right Arm",    Vector3.new(1, 2, 1),      CFrame.new(1.5, 0, 0))
-    addPart("Left Leg",     Vector3.new(1, 2, 1),      CFrame.new(-0.5, -2, 0))
-    addPart("Right Leg",    Vector3.new(1, 2, 1),      CFrame.new(0.5, -2, 0))
-
-    make("Humanoid", { DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None }, rig)
-    make("Animator", {}, rig:FindFirstChildOfClass("Humanoid"))
-
-    return rig
+    return Instance.new("Model")
 end
 
 -- ── Camera Update ──────────────────────────────────────────────────────────
@@ -442,12 +396,13 @@ function Module_Viewer.Open(animId)
         Name = "SilenceViewer",
         ResetOnSpawn = false,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = 100,
     }, pg)
 
-    -- Main window frame (dark #1A1A2E theme)
+    -- Main window frame
     mainFrame = make("Frame", {
         Size     = UDim2.fromOffset(430, 540),
-        Position = UDim2.new(0.5, -215, 0.5, -270),
+        Position = UDim2.new(0.5, 10, 0.5, -270),
         BackgroundColor3 = Color3.fromHex("1A1A2E"),
         BorderSizePixel = 0,
     }, gui)

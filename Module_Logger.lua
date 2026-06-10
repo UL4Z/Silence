@@ -85,6 +85,11 @@ function Module_Logger.Scan(dt)
                             name = "Anim_" .. animId
                         end
 
+                        -- CACHE RIG IMMEDIATELY (For accurate Viewer usage)
+                        if Modules.Viewer and Modules.Viewer.CacheEntity then
+                            Modules.Viewer.CacheEntity(animId, entity)
+                        end
+
                         DataBus.Animations[animId] = {
                             AnimId = animId,
                             AnimName = name,
