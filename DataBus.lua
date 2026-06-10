@@ -1,5 +1,5 @@
 --[[
-    DataBus.lua (v2)
+    DataBus.lua (v2.1 — ADDED HIT HISTORY)
     Centralized data store for Silence v2.
 ]]
 
@@ -21,7 +21,7 @@ local DataBus = {
         BlockM1 = false,
         GlobalAction = "PerEntry",
         ParryKey = Enum.KeyCode.F,
-        LoggerDistance = 50, -- Recommended default
+        LoggerDistance = 50,
         AnimFolderPath = "",
         SuccessAnimIds = {},
         FailAnimIds = {},
@@ -50,26 +50,27 @@ local DataBus = {
             TrimFraction = 0.15,
             PingRollingSamples = 5,
         }
-    },            -- Current loaded Config
-    EntityCache = {},       -- [cacheKey] = frozen model in PlayerGui
+    },
+    EntityCache = {},
     ParryState = {
         Active = false,
         CooldownActive = false,
         LastFireTime = 0,
         PendingParry = nil,
-        ScheduledJobs = {}, -- [entityKey] = ParryJob
+        ScheduledJobs = {},
     },
-    IgnoreList = {},        -- [animId] = true
+    IgnoreList = {},
     DelayRecorder = {
         Active = false,
-        Recorded = {},      -- [animId] = DelayRecord
+        Recorded = {},
     },
+    HitHistory = {},        -- [entityName] = { { animId, timeIntoAnim, timestamp }, ... }
     M1Blocked = false,
-    UI = {},                -- UI component references
+    UI = {},
     ExternalViewer = {
         Window = nil,
         CurrentAnimId = nil,
-        Markers = {},       -- Markers for current anim in viewer
+        Markers = {},       -- [animId] = { {Type, OffsetMs}, ... }
     }
 }
 

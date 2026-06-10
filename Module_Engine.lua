@@ -243,6 +243,11 @@ local function connectEntity(entity)
         local conn = animator.AnimationPlayed:Connect(function(track)
             if not DataBus.ParryState.Active then return end
             local animId = normaliseId(track.Animation.AnimationId)
+            
+            -- Track start time for Hit History
+            EntityConnections[key].LastAnimStartTime = tick()
+            EntityConnections[key].LastAnimId = animId
+
             if not DataBus.ActiveBuild.Entries[animId] then return end
             if DataBus.Config.IgnoreList[animId] then return end
 
@@ -276,6 +281,8 @@ local function connectEntity(entity)
         end)
         table.insert(EntityConnections[key], animWait)
     end
+
+    EntityConnections[key].Object = entity -- Store reference for hit history
 
     -- Method 2: AnimationController (bosses / non-humanoid NPCs)
     local function tryAnimController(ac)
@@ -353,10 +360,73 @@ function Module_Engine.Update(dt)
     end
 end
 
+-- ── Hit History ─────────────────────────────────────────────────────────────
+local function recordHit(entity, animId, startTime)
+    local now = tick()
+    local timeIntoAnim = now - startTime
+    local entityName = entity.Name or "Unknown"
+
+    if not DataBus.HitHistory[entityName] then
+        DataBus.HitHistory[entityName] = {}
+    end
+
+    table.insert(DataBus.HitHistory[entityName], 1, {
+        AnimId = animId,
+        TimeIntoAnim = timeIntoAnim,
+        Timestamp = now
+    })
+
+    -- Keep only most recent 10 hits per NPC
+    if #DataBus.HitHistory[entityName] > 10 then
+        table.remove(DataBus.HitHistory[entityName], 11)
+    end
+
+    if DataBus.UI and DataBus.UI.UpdateViewerHistory then
+        DataBus.UI.UpdateViewerHistory()
+    end
+end
+
+local lastKnownHealth = 100
+local function setupHitMonitor()
+    local char = Players.LocalPlayer.Character or Players.LocalPlayer.CharacterAdded:Wait()
+    local hum = char:WaitForChild("Humanoid")
+    lastKnownHealth = hum.Health
+
+    hum.HealthChanged:Connect(function(newHealth)
+        if newHealth < lastKnownHealth then
+            -- Damage detected. Find the most recently started animation from any NPC in range.
+            local bestEntity = nil
+            local bestAnimId = nil
+            local bestStartTime = 0
+
+            -- We use the entity connections to find playing animations
+            for key, conns in pairs(EntityConnections) do
+                -- This requires us to have stored the last started anim per entity
+                -- I will add 'LastAnim' to the connection table
+                local data = EntityConnections[key]
+                if data.LastAnimStartTime and data.LastAnimStartTime > bestStartTime then
+                    bestStartTime = data.LastAnimStartTime
+                    bestAnimId = data.LastAnimId
+                    -- Find entity ref by key (simplified: we'll store the object too)
+                    bestEntity = data.Object 
+                end
+            end
+
+            if bestEntity and bestAnimId and (tick() - bestStartTime < 2.0) then
+                recordHit(bestEntity, bestAnimId, bestStartTime)
+            end
+        end
+        lastKnownHealth = newHealth
+    end)
+end
+
 function Module_Engine.Init(bus, learning, failDetect)
     DataBus      = bus
     LearningSystem = learning
     FailDetection  = failDetect
+    
+    setupHitMonitor()
+    Players.LocalPlayer.CharacterAdded:Connect(setupHitMonitor)
 end
 
 function Module_Engine.Start()

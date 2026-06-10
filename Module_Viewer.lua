@@ -18,6 +18,7 @@ local DataBus = nil
 
 -- ── State ──────────────────────────────────────────────────────────────────
 local gui, mainFrame, viewportFrame, worldModel, rigModel, animCamera
+local historyFrame -- NEW: Hit History Panel
 local currentTrack = nil
 local currentAnimId = nil
 local wasPlayingBeforeScrub = false
@@ -872,6 +873,77 @@ function Module_Viewer.Open(animId)
             ZIndex = 5,
         }, viewportFrame)
     end
+
+    -- ── 10. Hit History Side Panel ──────────────────────────────────────────
+    historyFrame = make("Frame", {
+        Size = UDim2.fromOffset(220, 540),
+        Position = UDim2.new(1, 10, 0, 0),
+        BackgroundColor3 = Color3.fromHex("1A1A2E"),
+        BorderSizePixel = 0,
+        Parent = mainFrame,
+    }, mainFrame)
+    make("UICorner", { CornerRadius = UDim.new(0, 8) }, historyFrame)
+    make("UIStroke", { Color = Color3.fromRGB(80, 80, 140), Thickness = 1 }, historyFrame)
+
+    local histTitle = makeTxt("Hit History", 13, true, Color3.fromRGB(200, 200, 255), false, historyFrame)
+    histTitle.Position = UDim2.fromOffset(10, 10)
+    histTitle.Size = UDim2.new(1, -20, 0, 20)
+
+    local histScroll = make("ScrollingFrame", {
+        Size = UDim2.new(1, -10, 1, -50),
+        Position = UDim2.fromOffset(5, 40),
+        BackgroundTransparency = 1,
+        CanvasSize = UDim2.fromOffset(0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollBarThickness = 2,
+    }, historyFrame)
+    make("UIListLayout", { Padding = UDim.new(0, 5) }, histScroll)
+
+    DataBus.UI.UpdateViewerHistory = function()
+        if not histScroll then return end
+        for _, c in ipairs(histScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+
+        for npcName, hits in pairs(DataBus.HitHistory) do
+            local npcSection = make("Frame", {
+                Size = UDim2.new(1, -5, 0, 24),
+                BackgroundColor3 = Color3.fromRGB(40, 40, 65),
+                AutomaticSize = Enum.AutomaticSize.Y,
+            }, histScroll)
+            make("UICorner", { CornerRadius = UDim.new(0, 4) }, npcSection)
+            make("UIListLayout", { Padding = UDim.new(0, 2) }, npcSection)
+
+            makeTxt("  " .. npcName, 11, true, Color3.fromRGB(230, 230, 255), false, npcSection)
+
+            for i, hit in ipairs(hits) do
+                local hitRow = make("Frame", {
+                    Size = UDim2.new(1, -4, 0, 32),
+                    BackgroundTransparency = 1,
+                }, npcSection)
+                make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 4), VerticalAlignment = Enum.VerticalAlignment.Center }, hitRow)
+
+                local anim = DataBus.Animations[hit.AnimId]
+                local animName = anim and anim.AnimName or hit.AnimId
+                makeTxt(string.format("  • %s: %.2fs", animName, hit.TimeIntoAnim), 10, false, Color3.fromRGB(180, 180, 220), false, hitRow).Size = UDim2.new(0.6, 0, 1, 0)
+
+                local placeBtn = makeBtn("+ Place", hitRow, function()
+                    Module_Viewer.LoadAnimation(hit.AnimId)
+                    -- Add marker at hit time
+                    local offset = hit.TimeIntoAnim * 1000
+                    table.insert(markers, { Type = "Parry", OffsetMs = offset })
+                    if DataBus.ExternalViewer and currentAnimId then
+                        DataBus.ExternalViewer.Markers[currentAnimId] = markers
+                    end
+                    redrawMarkers(currentTrack and currentTrack.Length or 1)
+                    if DataBus.UI and DataBus.UI.RefreshBuilderMarkers then
+                        DataBus.UI.RefreshBuilderMarkers(currentAnimId)
+                    end
+                    Library:Notify({ Title = "Marker Placed", Description = string.format("Parry set at hit time: %.3fs", hit.TimeIntoAnim), Time = 3 })
+                end)
+            end
+        end
+    end
+
+    DataBus.UI.UpdateViewerHistory() -- Initial update
 end
 
 function Module_Viewer.Init(bus)
